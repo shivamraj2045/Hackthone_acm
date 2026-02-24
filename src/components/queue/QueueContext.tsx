@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
@@ -11,6 +10,7 @@ interface QueueContextType {
   isInitialized: boolean;
   login: (name: string, email: string, role: 'user' | 'admin') => void;
   logout: () => void;
+  updateProfile: (name: string, email: string) => void;
   joinQueue: (details: { name: string; email: string }) => void;
   approveRequest: (itemId: string) => void;
   rejectRequest: (itemId: string) => void;
@@ -85,7 +85,6 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Persist User Session to sessionStorage (isolated per tab)
   useEffect(() => {
-    // Only persist if we have finished the initial load to avoid clearing existing sessions on mount
     if (isInitialized) {
       if (currentUser) {
         sessionStorage.setItem(USER_SESSION_KEY, JSON.stringify(currentUser));
@@ -107,6 +106,16 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const logout = () => {
     setCurrentUser(null);
+  };
+
+  const updateProfile = (name: string, email: string) => {
+    if (!currentUser) return;
+    setCurrentUser({
+      ...currentUser,
+      name,
+      email
+    });
+    toast({ title: "Profile Updated", description: "Your changes have been saved." });
   };
 
   const joinQueue = (details: { name: string; email: string }) => {
@@ -207,13 +216,12 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const broadcastMessage = (msg: string) => {
-    // Shared broadcast via localStorage event sync
     toast({ title: "Announcement", description: msg });
   };
 
   return (
     <QueueContext.Provider value={{
-      queue, currentUser, isInitialized, login, logout, joinQueue,
+      queue, currentUser, isInitialized, login, logout, updateProfile, joinQueue,
       approveRequest, rejectRequest, callNext, skipToken, resetQueue, broadcastMessage
     }}>
       {children}
