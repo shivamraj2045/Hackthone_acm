@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 interface QueueContextType {
   queue: QueueState;
   currentUser: User | null;
+  isInitialized: boolean;
   login: (name: string, email: string, role: 'user' | 'admin') => void;
   logout: () => void;
   joinQueue: (details: { name: string; email: string }) => void;
@@ -21,11 +22,12 @@ interface QueueContextType {
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'smart_queue_data';
-const USER_SESSION_KEY = 'smart_queue_user_session';
+const STORAGE_KEY = 'smart_queue_data_v1';
+const USER_SESSION_KEY = 'smart_queue_user_session_v1';
 
 export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { toast } = useToast();
+  const [isInitialized, setIsInitialized] = useState(false);
   const [queue, setQueue] = useState<QueueState>({
     items: [],
     currentServingToken: null,
@@ -42,7 +44,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         setQueue(JSON.parse(savedQueue));
       } catch (e) {
-        // Silently fail or reset if data is corrupted
+        console.error("Failed to parse queue data", e);
       }
     }
     
@@ -50,12 +52,14 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         setCurrentUser(JSON.parse(savedUser));
       } catch (e) {
-        // Silently fail or reset if session is corrupted
+        console.error("Failed to parse user session", e);
       }
     }
+    
+    setIsInitialized(true);
   }, []);
 
-  // Real-time Sync across tabs for Queue Data
+  // Real-time Sync across tabs for Shared Queue Data
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY && e.newValue) {
@@ -72,23 +76,28 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Persist Queue Changes to localStorage
+  // Persist Queue Changes to localStorage (shared)
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-  }, [queue]);
+    if (isInitialized) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+    }
+  }, [queue, isInitialized]);
 
   // Persist User Session to sessionStorage (isolated per tab)
   useEffect(() => {
-    if (currentUser) {
-      sessionStorage.setItem(USER_SESSION_KEY, JSON.stringify(currentUser));
-    } else {
-      sessionStorage.removeItem(USER_SESSION_KEY);
+    // Only persist if we have finished the initial load to avoid clearing existing sessions on mount
+    if (isInitialized) {
+      if (currentUser) {
+        sessionStorage.setItem(USER_SESSION_KEY, JSON.stringify(currentUser));
+      } else {
+        sessionStorage.removeItem(USER_SESSION_KEY);
+      }
     }
-  }, [currentUser]);
+  }, [currentUser, isInitialized]);
 
   const login = (name: string, email: string, role: 'user' | 'admin') => {
     const newUser: User = { 
-      id: Math.random().toString(36).substr(2, 9), 
+      id: Math.random().toString(36).substring(2, 11), 
       name, 
       email, 
       role 
@@ -110,7 +119,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const newItem: QueueItem = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substring(2, 11),
       userId: currentUser.id,
       userName: details.name,
       tokenNumber: null,
@@ -198,12 +207,13 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const broadcastMessage = (msg: string) => {
-    toast({ title: "Admin Broadcast", description: msg });
+    // Shared broadcast via localStorage event sync
+    toast({ title: "Announcement", description: msg });
   };
 
   return (
     <QueueContext.Provider value={{
-      queue, currentUser, login, logout, joinQueue,
+      queue, currentUser, isInitialized, login, logout, joinQueue,
       approveRequest, rejectRequest, callNext, skipToken, resetQueue, broadcastMessage
     }}>
       {children}
