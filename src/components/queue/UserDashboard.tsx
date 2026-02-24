@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -8,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from './StatusBadge';
-import { User, Ticket, Navigation, Clock, LogOut, Settings, History, Github } from 'lucide-react';
+import { User, Ticket, Navigation, Clock, LogOut, Settings, History } from 'lucide-react';
 
 export function UserDashboard() {
   const { currentUser, queue, joinQueue, logout, updateProfile } = useQueue();
@@ -216,29 +215,6 @@ export function UserDashboard() {
                       </Button>
                     </div>
                   </form>
-                </CardContent>
-              </Card>
-
-              <Card className="glass border-none">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Github className="h-5 w-5" /> Linked Accounts
-                  </CardTitle>
-                  <CardDescription>Connect your social accounts for easier access.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/5 border border-white/10">
-                    <div className="flex items-center gap-3">
-                      <Github className="h-5 w-5" />
-                      <div>
-                        <p className="text-sm font-medium">GitHub</p>
-                        <p className="text-xs text-muted-foreground">Not connected</p>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm" className="border-white/10 hover:bg-white/10">
-                      Connect
-                    </Button>
-                  </div>
                 </CardContent>
               </Card>
 
