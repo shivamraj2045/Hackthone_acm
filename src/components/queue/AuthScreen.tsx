@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, User as UserIcon, Waves, Monitor } from 'lucide-react';
+import { ShieldCheck, User as UserIcon, Waves, Monitor, Github } from 'lucide-react';
+import { Separator } from "@/components/ui/separator";
 
 export function AuthScreen() {
   const { login } = useQueue();
@@ -17,6 +18,11 @@ export function AuthScreen() {
   const handleAuth = (role: 'user' | 'admin') => {
     if (!formData.name || !formData.email) return;
     login(formData.name, formData.email, role);
+  };
+
+  const handleSocialLogin = (provider: string) => {
+    // Mock social login
+    login("Social User", "social@example.com", 'user');
   };
 
   return (
@@ -66,9 +72,22 @@ export function AuthScreen() {
                 </div>
               </div>
 
-              <TabsContent value="user" className="mt-6">
+              <TabsContent value="user" className="mt-6 space-y-4">
                 <Button className="w-full h-12 bg-primary hover:scale-[1.02] transition-all" onClick={() => handleAuth('user')}>
                   <UserIcon className="h-4 w-4 mr-2" /> Continue as User
+                </Button>
+                
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <Separator className="w-full bg-white/10" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-[#1C1C22] px-2 text-muted-foreground">Or continue with</span>
+                  </div>
+                </div>
+
+                <Button variant="outline" className="w-full h-12 border-white/10 bg-white/5 hover:bg-white/10 text-white" onClick={() => handleSocialLogin('github')}>
+                  <Github className="h-4 w-4 mr-2" /> GitHub
                 </Button>
               </TabsContent>
 
