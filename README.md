@@ -4,14 +4,25 @@ This is a Next.js-based queue management system built with React, Tailwind CSS, 
 
 ## How to push code to GitHub
 
-To push your project code to a GitHub repository from this environment:
+If you are using the terminal and see the error `error: remote origin already exists`, follow these steps:
 
-1. Click on the **Source Control** icon in the left-hand sidebar.
-2. Follow the prompts to initialize your repository.
-3. Stage and commit your changes.
-4. Use the "Publish to GitHub" or "Push" option to link your account and repository.
+1. **Update the remote to your repository:**
+   ```bash
+   git remote set-url origin https://github.com/shivamraj2045/Hackthone_acm.git
+   ```
 
-**Note:** The GitHub buttons within the application UI (Login screen and Profile) are mock features for demonstration of user authentication and are not related to the project's source control.
+2. **Stage and commit your changes:**
+   ```bash
+   git add .
+   git commit -m "Initial commit"
+   ```
+
+3. **Push to GitHub:**
+   ```bash
+   git push -u origin main
+   ```
+
+Alternatively, you can click on the **Source Control** icon in the left-hand sidebar of the editor to manage your repository visually.
 
 ## Getting Started
 
