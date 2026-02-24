@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, User as UserIcon, Waves } from 'lucide-react';
+import { ShieldCheck, User as UserIcon, Waves, Monitor } from 'lucide-react';
 
 export function AuthScreen() {
   const { login } = useQueue();
@@ -80,9 +81,15 @@ export function AuthScreen() {
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-muted-foreground">
-          Secure JWT simulation. Role-based access control enabled.
-        </p>
+        <div className="space-y-4">
+          <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs text-center">
+            <Monitor className="h-4 w-4" />
+            <span>Tip: Open two tabs to test Admin and User roles simultaneously.</span>
+          </div>
+          <p className="text-center text-[10px] text-muted-foreground uppercase tracking-widest font-bold">
+            Isolated session management enabled
+          </p>
+        </div>
       </div>
     </div>
   );

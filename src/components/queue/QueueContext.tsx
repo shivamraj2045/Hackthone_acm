@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
@@ -21,7 +22,7 @@ interface QueueContextType {
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'smart_queue_data';
-const USER_KEY = 'smart_queue_user';
+const USER_SESSION_KEY = 'smart_queue_user_session';
 
 export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { toast } = useToast();
@@ -32,32 +33,72 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  // Persistence
+  // Initial Load: Queue from localStorage (shared), User from sessionStorage (isolated per tab)
   useEffect(() => {
     const savedQueue = localStorage.getItem(STORAGE_KEY);
-    const savedUser = localStorage.getItem(USER_KEY);
-    if (savedQueue) setQueue(JSON.parse(savedQueue));
-    if (savedUser) setCurrentUser(JSON.parse(savedUser));
+    const savedUser = sessionStorage.getItem(USER_SESSION_KEY);
+    
+    if (savedQueue) {
+      try {
+        setQueue(JSON.parse(savedQueue));
+      } catch (e) {
+        // Silently fail or reset if data is corrupted
+      }
+    }
+    
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        // Silently fail or reset if session is corrupted
+      }
+    }
   }, []);
 
+  // Real-time Sync across tabs for Queue Data
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const updatedQueue = JSON.parse(e.newValue);
+          setQueue(updatedQueue);
+        } catch (err) {
+          // Ignore parse errors from external changes
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // Persist Queue Changes to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
   }, [queue]);
 
+  // Persist User Session to sessionStorage (isolated per tab)
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
+      sessionStorage.setItem(USER_SESSION_KEY, JSON.stringify(currentUser));
     } else {
-      localStorage.removeItem(USER_KEY);
+      sessionStorage.removeItem(USER_SESSION_KEY);
     }
   }, [currentUser]);
 
   const login = (name: string, email: string, role: 'user' | 'admin') => {
-    const newUser: User = { id: Math.random().toString(36).substr(2, 9), name, email, role };
+    const newUser: User = { 
+      id: Math.random().toString(36).substr(2, 9), 
+      name, 
+      email, 
+      role 
+    };
     setCurrentUser(newUser);
   };
 
-  const logout = () => setCurrentUser(null);
+  const logout = () => {
+    setCurrentUser(null);
+  };
 
   const joinQueue = (details: { name: string; email: string }) => {
     if (!currentUser) return;
@@ -127,7 +168,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const newItems = prev.items.map(item => {
         if (item.id === nextItem.id) return { ...item, status: 'serving' as QueueStatus, position: 0 };
         if (item.status === 'serving') return { ...item, status: 'served' as QueueStatus, position: null, servedAt: new Date().toISOString() };
-        if (item.status === 'approved') return { ...item, position: (item.position || 1) - 1 };
+        if (item.status === 'approved') return { ...item, position: Math.max(0, (item.position || 1) - 1) };
         return item;
       });
 
