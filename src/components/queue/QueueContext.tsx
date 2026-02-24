@@ -1,8 +1,22 @@
+
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { QueueItem, QueueState, User, QueueStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  orderBy, 
+  onSnapshot,
+  writeBatch,
+  getDoc
+} from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
 
 interface QueueContextType {
   queue: QueueState;
@@ -22,32 +36,22 @@ interface QueueContextType {
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'smart_queue_data_v1';
-const USER_SESSION_KEY = 'smart_queue_user_session_v1';
+const USER_SESSION_KEY = 'smart_queue_user_session_v2';
 
 export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { toast } = useToast();
+  const db = useFirestore();
   const [isInitialized, setIsInitialized] = useState(false);
-  const [queue, setQueue] = useState<QueueState>({
-    items: [],
-    currentServingToken: null,
+  const [items, setItems] = useState<QueueItem[]>([]);
+  const [metadata, setMetadata] = useState<{ lastTokenNumber: number; currentServingToken: number | null }>({
     lastTokenNumber: 0,
+    currentServingToken: null
   });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  // Initial Load: Queue from localStorage (shared), User from sessionStorage (isolated per tab)
+  // Load User Session
   useEffect(() => {
-    const savedQueue = localStorage.getItem(STORAGE_KEY);
     const savedUser = sessionStorage.getItem(USER_SESSION_KEY);
-    
-    if (savedQueue) {
-      try {
-        setQueue(JSON.parse(savedQueue));
-      } catch (e) {
-        console.error("Failed to parse queue data", e);
-      }
-    }
-    
     if (savedUser) {
       try {
         setCurrentUser(JSON.parse(savedUser));
@@ -55,35 +59,48 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         console.error("Failed to parse user session", e);
       }
     }
-    
     setIsInitialized(true);
   }, []);
 
-  // Real-time Sync across tabs for Shared Queue Data
+  // Sync Queue Items from Firestore
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
-        try {
-          const updatedQueue = JSON.parse(e.newValue);
-          setQueue(updatedQueue);
-        } catch (err) {
-          // Ignore parse errors from external changes
-        }
+    if (!db) return;
+
+    const q = query(collection(db, 'queue'), orderBy('createdAt', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const newItems = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as QueueItem[];
+      setItems(newItems);
+    });
+
+    return () => unsubscribe();
+  }, [db]);
+
+  // Sync Metadata from Firestore
+  useEffect(() => {
+    if (!db) return;
+
+    const unsubscribe = onSnapshot(doc(db, 'metadata', 'config'), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setMetadata({
+          lastTokenNumber: data.lastTokenNumber || 0,
+          currentServingToken: data.currentServingToken || null
+        });
       }
-    };
+    });
 
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+    return () => unsubscribe();
+  }, [db]);
 
-  // Persist Queue Changes to localStorage (shared)
-  useEffect(() => {
-    if (isInitialized) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-    }
-  }, [queue, isInitialized]);
+  const queue: QueueState = useMemo(() => ({
+    items,
+    currentServingToken: metadata.currentServingToken,
+    lastTokenNumber: metadata.lastTokenNumber
+  }), [items, metadata]);
 
-  // Persist User Session to sessionStorage (isolated per tab)
   useEffect(() => {
     if (isInitialized) {
       if (currentUser) {
@@ -110,25 +127,21 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateProfile = (name: string, email: string) => {
     if (!currentUser) return;
-    setCurrentUser({
-      ...currentUser,
-      name,
-      email
-    });
+    setCurrentUser({ ...currentUser, name, email });
     toast({ title: "Profile Updated", description: "Your changes have been saved." });
   };
 
-  const joinQueue = (details: { name: string; email: string }) => {
-    if (!currentUser) return;
+  const joinQueue = async (details: { name: string; email: string }) => {
+    if (!currentUser || !db) return;
     
-    const exists = queue.items.find(item => item.userId === currentUser.id && ['pending', 'approved', 'serving'].includes(item.status));
+    const exists = items.find(item => item.userId === currentUser.id && ['pending', 'approved', 'serving'].includes(item.status));
     if (exists) {
       toast({ title: "Already in queue", description: "You have an active queue request.", variant: "destructive" });
       return;
     }
 
-    const newItem: QueueItem = {
-      id: Math.random().toString(36).substring(2, 11),
+    const itemId = Math.random().toString(36).substring(2, 11);
+    const newItem: Omit<QueueItem, 'id'> = {
       userId: currentUser.id,
       userName: details.name,
       tokenNumber: null,
@@ -137,82 +150,88 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createdAt: new Date().toISOString(),
     };
 
-    setQueue(prev => ({ ...prev, items: [...prev.items, newItem] }));
+    setDoc(doc(db, 'queue', itemId), newItem);
     toast({ title: "Request Sent", description: "Waiting for admin approval." });
   };
 
-  const approveRequest = (itemId: string) => {
-    setQueue(prev => {
-      const newToken = prev.lastTokenNumber + 1;
-      const approvedItems = prev.items.filter(i => i.status === 'approved' || i.status === 'serving').length;
-      
-      const newItems = prev.items.map(item => {
-        if (item.id === itemId) {
-          return {
-            ...item,
-            status: 'approved' as QueueStatus,
-            tokenNumber: newToken,
-            position: approvedItems + 1
-          };
-        }
-        return item;
-      });
-
-      return {
-        ...prev,
-        items: newItems,
-        lastTokenNumber: newToken
-      };
+  const approveRequest = async (itemId: string) => {
+    if (!db) return;
+    const newToken = metadata.lastTokenNumber + 1;
+    const approvedItemsCount = items.filter(i => i.status === 'approved' || i.status === 'serving').length;
+    
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'queue', itemId), {
+      status: 'approved',
+      tokenNumber: newToken,
+      position: approvedItemsCount + 1
     });
+    batch.set(doc(db, 'metadata', 'config'), { 
+      ...metadata, 
+      lastTokenNumber: newToken 
+    }, { merge: true });
+
+    await batch.commit();
     toast({ title: "Approved", description: "User has been added to the queue." });
   };
 
   const rejectRequest = (itemId: string) => {
-    setQueue(prev => ({
-      ...prev,
-      items: prev.items.map(i => i.id === itemId ? { ...i, status: 'rejected' } : i)
-    }));
+    if (!db) return;
+    updateDoc(doc(db, 'queue', itemId), { status: 'rejected' });
   };
 
-  const callNext = () => {
-    setQueue(prev => {
-      const approvedItems = prev.items.filter(i => i.status === 'approved').sort((a, b) => (a.tokenNumber || 0) - (b.tokenNumber || 0));
-      if (approvedItems.length === 0) {
-        toast({ title: "Queue Empty", description: "No pending approved tokens to call.", variant: "destructive" });
-        return prev;
-      }
+  const callNext = async () => {
+    if (!db) return;
+    const approvedItems = items
+      .filter(i => i.status === 'approved')
+      .sort((a, b) => (a.tokenNumber || 0) - (b.tokenNumber || 0));
 
-      const nextItem = approvedItems[0];
-      const newItems = prev.items.map(item => {
-        if (item.id === nextItem.id) return { ...item, status: 'serving' as QueueStatus, position: 0 };
-        if (item.status === 'serving') return { ...item, status: 'served' as QueueStatus, position: null, servedAt: new Date().toISOString() };
-        if (item.status === 'approved') return { ...item, position: Math.max(0, (item.position || 1) - 1) };
-        return item;
+    if (approvedItems.length === 0) {
+      toast({ title: "Queue Empty", description: "No pending approved tokens.", variant: "destructive" });
+      return;
+    }
+
+    const nextItem = approvedItems[0];
+    const batch = writeBatch(db);
+
+    // Set next item to serving
+    batch.update(doc(db, 'queue', nextItem.id), { status: 'serving', position: 0 });
+
+    // Set currently serving to served
+    const currentlyServing = items.find(i => i.status === 'serving');
+    if (currentlyServing) {
+      batch.update(doc(db, 'queue', currentlyServing.id), { 
+        status: 'served', 
+        position: null, 
+        servedAt: new Date().toISOString() 
       });
+    }
 
-      return {
-        ...prev,
-        items: newItems,
-        currentServingToken: nextItem.tokenNumber
-      };
+    // Update others' positions
+    items.filter(i => i.status === 'approved' && i.id !== nextItem.id).forEach(item => {
+      batch.update(doc(db, 'queue', item.id), { position: Math.max(0, (item.position || 1) - 1) });
     });
-    toast({ title: "Calling Next", description: "The next token has been alerted." });
+
+    batch.set(doc(db, 'metadata', 'config'), { 
+      ...metadata, 
+      currentServingToken: nextItem.tokenNumber 
+    }, { merge: true });
+
+    await batch.commit();
+    toast({ title: "Calling Next", description: `Token #${nextItem.tokenNumber} called.` });
   };
 
   const skipToken = (itemId: string) => {
-    setQueue(prev => ({
-      ...prev,
-      items: prev.items.map(i => i.id === itemId ? { ...i, status: 'skipped' as QueueStatus, position: null } : i)
-    }));
+    if (!db) return;
+    updateDoc(doc(db, 'queue', itemId), { status: 'skipped', position: null });
   };
 
-  const resetQueue = () => {
-    setQueue({
-      items: [],
-      currentServingToken: null,
-      lastTokenNumber: 0
-    });
-    toast({ title: "Queue Reset", description: "All queue data has been cleared." });
+  const resetQueue = async () => {
+    if (!db) return;
+    const batch = writeBatch(db);
+    items.forEach(item => batch.delete(doc(db, 'queue', item.id)));
+    batch.set(doc(db, 'metadata', 'config'), { lastTokenNumber: 0, currentServingToken: null });
+    await batch.commit();
+    toast({ title: "Queue Reset", description: "All data cleared." });
   };
 
   const broadcastMessage = (msg: string) => {

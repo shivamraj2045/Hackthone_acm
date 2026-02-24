@@ -1,0 +1,42 @@
+
+{
+  "entities": {
+    "QueueItem": {
+      "title": "Queue Item",
+      "description": "A single entry in the queue.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "tokenNumber": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "serving", "served", "skipped", "rejected"] },
+        "position": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "servedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "status", "createdAt"]
+    },
+    "QueueMetadata": {
+      "title": "Queue Metadata",
+      "description": "Global state for the queue system.",
+      "type": "object",
+      "properties": {
+        "lastTokenNumber": { "type": "number" },
+        "currentServingToken": { "type": "number" }
+      }
+    }
+  },
+  "auth": {
+    "providers": ["password"]
+  },
+  "firestore": {
+    "/queue/{itemId}": {
+      "schema": "QueueItem",
+      "description": "Collection of all queue requests."
+    },
+    "/metadata/config": {
+      "schema": "QueueMetadata",
+      "description": "Global configuration and state."
+    }
+  }
+}
